@@ -29,7 +29,7 @@ def branching_net(hiddens_common, hiddens_actions, hiddens_value, num_states, nu
 
     total_action_scores = tf.stack(action_scores, axis=1)
 
-    # Create the sate value branch
+    # Create the state value branch
     state_out = out
     for i, hidden in enumerate(hiddens_value):
         if hidden != 0:

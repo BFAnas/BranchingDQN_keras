@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
-import sys
 from tqdm import tqdm
 import tensorflow as tf
-import numpy as np
-from tensorflow import keras
-from tensorflow.keras import layers
-import gym
-import random
-from utils import ExperienceReplayMemory, AgentConfig, BranchingTensorEnv_tf
-import utils
-import copy
+from utils import AgentConfig, BranchingTensorEnv_tf
 
 from bdq_tf import BranchingDQN
 

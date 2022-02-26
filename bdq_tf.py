@@ -35,20 +35,21 @@ class BranchingDQN():
         action = np.argmax(out, axis=2)[0]
         return action
     
-    @tf.function
+    # @tf.function
     def train_step(self, states, action_mask, target_qvals):
         with tf.GradientTape() as tape:
             # Train the model on the states and updated Q-values
             q_values = self.q(states)
 
             # Apply the masks to the Q-values to get the Q-value for action taken
-            q_action = tf.reduce_sum(tf.multiply(q_values, action_mask), axis=-1)
+            q_action = tf.multiply(q_values, action_mask)
 
             # Calculate loss between target Q-value and old Q-value
             loss = self.loss_function(target_qvals, q_action)
 
         # Backpropagation
         grads = tape.gradient(loss, self.q.trainable_variables)
+        # print(grads[-2:])
         self.optimizer.apply_gradients(zip(grads, self.q.trainable_variables))
         return loss
         
@@ -73,11 +74,12 @@ class BranchingDQN():
         mean_max_next_q_vals = tf.reduce_mean(tf.reduce_sum(max_next_q_vals, axis=-1), axis=-1)
 
         target_qvals = rewards + mean_max_next_q_vals*0.99*masks
-        target_qvals = tf.reshape(tf.repeat(target_qvals, self.num_action_branches), 
-                                  (-1, self.num_action_branches))
+        target_qvals = tf.reshape(tf.repeat(target_qvals, self.num_action_branches * self.action_per_branch), 
+                                  (-1, self.num_action_branches, self.action_per_branch))
         
 
         action_mask = tf.one_hot(actions, self.action_per_branch)
+        target_qvals = tf.multiply(target_qvals, action_mask)
         
         loss = self.train_step(states, action_mask, target_qvals)
 
@@ -89,13 +91,13 @@ class BranchingDQN():
 
 
 def main():
-    bins = 6
+    bins = 5
     
     env = BranchingTensorEnv_tf('BipedalWalker-v3', bins)
     
-    config = AgentConfig()
+    config = AgentConfig(batch_size=5, learning_starts=5)
     memory = ExperienceReplayMemory(config.memory_size)
-    agent = BranchingDQN([128, 128], [0], [0], env.observation_space.shape[0], env.action_space.shape[0], bins, config)
+    agent = BranchingDQN([8, 8], [4], [4], env.observation_space.shape[0], env.action_space.shape[0], bins, config)
     
     s = env.reset()
     s = np.array(s)
