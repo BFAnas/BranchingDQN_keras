@@ -12,12 +12,12 @@ This BDQ implementation in Keras is demonstrated on `BipedalWalker-v3` environme
 To train an agent, run: 
 
 ```bash
-python bdq_tf.py
+python train.py
 ```
 
 To see the agent perform: 
 ```bash
-python enjoy_tf.py
+python enjoy.py
 ```
 
 ## Performances

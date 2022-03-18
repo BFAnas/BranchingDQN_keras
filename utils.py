@@ -1,25 +1,17 @@
-import numpy as np 
-import gym 
+import os
 import random
-from argparse import ArgumentParser 
-import os 
-import pandas as pd 
 
-import matplotlib.pyplot as plt 
-plt.style.use('ggplot')
+import gym
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from scipy.ndimage.filters import gaussian_filter1d
 
+plt.style.use('ggplot')
 
-def arguments(): 
 
-    parser = ArgumentParser()
-    parser.add_argument('--env', default = 'BipedalWalker-v3')
-
-    return parser.parse_args()
-
-def save_tf(agent, rewards, args):
-
-    path = './runs/{}_tf/'.format(args)
+def save(agent, rewards, task, path='./runs/'):
+    path = os.path.join(path, task)
     try:
         os.makedirs(path)
     except:
@@ -28,44 +20,17 @@ def save_tf(agent, rewards, args):
     agent.q.save(path)
 
     plt.cla()
-    plt.plot(rewards, c = 'r', alpha = 0.3)
-    plt.plot(gaussian_filter1d(rewards, sigma = 5), c = 'r', label = 'Rewards')
+    plt.plot(rewards, c='r', alpha=0.3)
+    plt.plot(gaussian_filter1d(rewards, sigma=5), c='r', label='Rewards')
     plt.xlabel('Episodes')
     plt.ylabel('Cumulative reward')
-    plt.title('Branching DDQN: {}'.format(args))
+    plt.title('Branching DDQN: {}'.format(task))
     plt.savefig(os.path.join(path, 'reward.png'))
 
-    pd.DataFrame(rewards, columns = ['Reward']).to_csv(os.path.join(path, 'rewards.csv'), index = False)
+    pd.DataFrame(rewards, columns=['Reward']).to_csv(
+        os.path.join(path, 'rewards.csv'), index=False)
 
-
-class AgentConfig:
-
-    def __init__(self, 
-                 epsilon_start = 1.,
-                 epsilon_final = 0.01,
-                 epsilon_decay = 8000,
-                 gamma = 0.99, 
-                 lr = 1e-4, 
-                 target_net_update_freq = 1000, 
-                 memory_size = 100000, 
-                 batch_size = 128, 
-                 learning_starts = 5000,
-                 max_frames = 1000000):
-
-        self.epsilon_start = epsilon_start
-        self.epsilon_final = epsilon_final
-        self.epsilon_decay = epsilon_decay
-        self.epsilon_by_frame = lambda i: self.epsilon_final + (self.epsilon_start - self.epsilon_final) * np.exp(-1. * i / self.epsilon_decay)
-
-        self.gamma =gamma
-        self.lr =lr
-
-        self.target_net_update_freq =target_net_update_freq
-        self.memory_size =memory_size
-        self.batch_size =batch_size
-
-        self.learning_starts = learning_starts
-        self.max_frames = max_frames
+    return path
 
 
 class ExperienceReplayMemory:
@@ -79,21 +44,19 @@ class ExperienceReplayMemory:
             del self.memory[0]
 
     def sample(self, batch_size):
-
         batch = random.sample(self.memory, batch_size)
         states = []
         actions = []
         rewards = []
-        next_states = [] 
+        next_states = []
         dones = []
 
-        for b in batch: 
+        for b in batch:
             states.append(b[0])
             actions.append(b[1])
             rewards.append(b[2])
             next_states.append(b[3])
             dones.append(b[4])
-
 
         return states, actions, rewards, next_states, dones
 
@@ -101,37 +64,17 @@ class ExperienceReplayMemory:
         return len(self.memory)
 
 
-class TensorEnv_tf(gym.Wrapper):
+class DiscreteToContinuous(gym.ActionWrapper):
+    def __init__(self, env, action_per_branch):
+        super().__init__(env)
+        self.action_per_branch = action_per_branch
+        low = self.action_space.low
+        high = self.action_space.high
+        self.mesh = []
+        for l, h in zip(low, high):
+            self.mesh.append(np.linspace(l, h, action_per_branch))
 
-    def __init__(self, env_name):
-
-        super().__init__(gym.make(env_name))
-
-    def process(self, x):
-
-        return np.array(x).reshape(1,-1)
-
-    def reset(self):
-
-        return self.process(super().reset())
-
-    def step(self, a):
-
-        ns, r, done, infos = super().step(a)
-        return self.process(ns), r, done, infos
-
-
-class BranchingTensorEnv_tf(TensorEnv_tf):
-
-    def __init__(self, env_name, n):
-
-        super().__init__(env_name)
-        self.n = n
-        self.discretized = np.linspace(-1.,1., self.n)
-
-
-    def step(self, a):
-
-        action = np.array([self.discretized[aa] for aa in a])
-
-        return super().step(action)
+    def action(self, act):
+        # modify act
+        act = np.array([self.mesh[i][a] for i, a in enumerate(act)])
+        return act
