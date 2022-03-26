@@ -10,6 +10,26 @@ from scipy.ndimage.filters import gaussian_filter1d
 plt.style.use('ggplot')
 
 
+def epsilon_by_frame(i, epsilon_start, epsilon_final, epsilon_decay):
+    return epsilon_final + \
+        (epsilon_start - epsilon_final) * \
+        np.exp(-1. * i / epsilon_decay)
+      
+        
+def test_fn(env, agent):
+    s = env.reset()
+    s = np.array(s)    
+    ep_reward = 0.
+    done = False
+    while not done:
+        action = agent.get_action(np.expand_dims(s, 0))
+        ns, r, done, _ = env.step(action)
+        s = ns
+        s = np.array(s)
+        ep_reward += r
+    return ep_reward
+
+
 def save(agent, rewards, task, path='./runs/'):
     path = os.path.join(path, task)
     try:

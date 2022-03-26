@@ -7,7 +7,7 @@ import network
 
 
 class BranchingDQN:
-    def __init__(self, hiddens_common, hiddens_actions, hiddens_value, num_states, num_action_branches, action_per_branch, config):
+    def __init__(self, hiddens_common, hiddens_actions, hiddens_value, num_states, num_action_branches, action_per_branch, lr, target_net_update_freq):
         self.num_states = num_states
         self.num_action_branches = num_action_branches
         self.action_per_branch = action_per_branch
@@ -22,9 +22,9 @@ class BranchingDQN:
         self.target.set_weights(weights)
 
         self.optimizer = keras.optimizers.Adam(
-            learning_rate=config.lr, clipnorm=1)
+            learning_rate=lr, clipnorm=1)
 
-        self.target_net_update_freq = config.target_net_update_freq
+        self.target_net_update_freq = target_net_update_freq
         self.update_counter = 0
 
     @staticmethod
@@ -88,3 +88,5 @@ class BranchingDQN:
             self.update_counter = 0
             weights = self.q.get_weights()
             self.target.set_weights(weights)
+            
+        return loss
