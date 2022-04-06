@@ -10,3 +10,5 @@ tqdm
 pandas
 matplotlib
 scipy
+cpprb
+git+https://github.com/BSCCNS/perseo.git@72aa020#egg=perseo

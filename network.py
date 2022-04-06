@@ -5,9 +5,9 @@ from tensorflow import keras
 from tensorflow.keras import layers
 
 
-def branching_net(hiddens_common, hiddens_actions, hiddens_value, num_states, num_action_branches, action_per_branch):
+def branching_net(hiddens_common, hiddens_actions, hiddens_value, state_shape, num_action_branches, action_per_branch):
 
-    state_input = layers.Input(num_states, name='Input')
+    state_input = layers.Input(state_shape, name='Input')
     out = state_input
 
     # Create the shared network module "Common State-Value Estimator"

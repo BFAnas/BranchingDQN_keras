@@ -5,6 +5,7 @@ import gym
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from scipy.ndimage.filters import gaussian_filter1d
 
 plt.style.use('ggplot')
@@ -22,7 +23,7 @@ def test_fn(env, agent):
     ep_reward = 0.
     done = False
     while not done:
-        action = agent.get_action(np.expand_dims(s, 0))
+        action = agent.get_action(s)
         ns, r, done, _ = env.step(action)
         s = ns
         s = np.array(s)
@@ -51,38 +52,6 @@ def save(agent, rewards, task, path='./runs/'):
         os.path.join(path, 'rewards.csv'), index=False)
 
     return path
-
-
-class ExperienceReplayMemory:
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.memory = []
-
-    def push(self, transition):
-        self.memory.append(transition)
-        if len(self.memory) > self.capacity:
-            del self.memory[0]
-
-    def sample(self, batch_size):
-        batch = random.sample(self.memory, batch_size)
-        states = []
-        actions = []
-        rewards = []
-        next_states = []
-        dones = []
-
-        for b in batch:
-            states.append(b[0])
-            actions.append(b[1])
-            rewards.append(b[2])
-            next_states.append(b[3])
-            dones.append(b[4])
-
-        return states, actions, rewards, next_states, dones
-
-    def __len__(self):
-        return len(self.memory)
-
 
 class DiscreteToContinuous(gym.ActionWrapper):
     def __init__(self, env, action_per_branch):
