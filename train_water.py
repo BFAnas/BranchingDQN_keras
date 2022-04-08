@@ -14,14 +14,10 @@ from cpprb import ReplayBuffer
 import sys
 sys.path.insert(0, "/home/anas/projects/local_bsc/perseo")
 # sys.path.insert(0, "/gpfs/projects/bsc21/bsc21873/aguas/perseo")
-from environments.GymEnvironments import _CONFIG_PARAMS_REWARD, _CONFIG_PARAMS_STATE
 from environments.GymEnvironments import WaterDistributionEnvironment
 
 # Preliminary instructions
 warnings.filterwarnings('ignore')
-# tf.compat.v1.disable_eager_execution()
-REWARD_PARAMS = _CONFIG_PARAMS_REWARD.copy()
-STATE_PARAMS = _CONFIG_PARAMS_STATE.copy()
 
 # Environment setup
 ENV_ID = 'WDE-0'
@@ -31,13 +27,6 @@ CONTROL_ELEMS = 'valves'
 CONTROL_LIMITS = None
 CONTROL_TIME_STEP = 3600
 INIT_RANDOM_ACTIONS_PER_EPISODE = False
-REWARD_PARAMS['pressure_min'] = 40
-REWARD_PARAMS['pressure_max'] = 80
-REWARD_PARAMS['cost_max'] = 2
-STATE_PARAMS['pressure_min'] = 0
-STATE_PARAMS['pressure_max'] = 120
-STATE_PARAMS['demand_min'] = 0
-STATE_PARAMS['demand_max'] = 80
 
 # Environment configuration
 env_config = {
@@ -45,8 +34,6 @@ env_config = {
     'list_control_elements': CONTROL_ELEMS,
     'list_action_limits': CONTROL_LIMITS,
     'time_step': CONTROL_TIME_STEP,
-    'reward_params': REWARD_PARAMS,
-    'state_params': STATE_PARAMS,
     'random_ini_actions': INIT_RANDOM_ACTIONS_PER_EPISODE,
 } 
 
@@ -69,7 +56,7 @@ def get_args():
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--lr', type=float, default=5e-4)
     parser.add_argument('--target_net_update_freq', type=int, default=1000)
-    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--learning_starts', type=int, default=5000)
     parser.add_argument('--max_frames', type=int, default=1000000)
     # replay buffer

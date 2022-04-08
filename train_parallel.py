@@ -1,3 +1,4 @@
+import datetime
 from utils import DiscreteToContinuous, epsilon_by_frame, test_fn
 from agent import BranchingDQN
 
@@ -5,60 +6,22 @@ from tqdm import tqdm
 
 import json
 import os
-import sys
 import time
 import warnings
 from argparse import ArgumentParser
 from multiprocessing import Event, Process, SimpleQueue, shared_memory
 import multiprocessing
 
+import gym
 import mlflow
 import numpy as np
 from cpprb import (MPPrioritizedReplayBuffer, ReplayBuffer)
-sys.path.insert(0, "/home/anas/projects/local_bsc/perseo")
-# sys.path.insert(0, "/gpfs/projects/bsc21/bsc21873/aguas/perseo")
-from environments.GymEnvironments import (_CONFIG_PARAMS_REWARD,
-                                          _CONFIG_PARAMS_STATE,
-                                          WaterDistributionEnvironment)
 
-# Preliminary instructions
 warnings.filterwarnings('ignore')
-REWARD_PARAMS = _CONFIG_PARAMS_REWARD.copy()
-STATE_PARAMS = _CONFIG_PARAMS_STATE.copy()
-
-# Environment setup
-ENV_ID = 'WDE-0'
-INP_FILE = '/home/anas/projects/local_bsc/perseo/data/MATERNITAT.inp'
-REPORT_DIR, REPORT_NAME = None, None
-CONTROL_ELEMS = 'valves'
-CONTROL_LIMITS = None
-CONTROL_TIME_STEP = 3600
-INIT_RANDOM_ACTIONS_PER_EPISODE = False
-REWARD_PARAMS['pressure_min'] = 40
-REWARD_PARAMS['pressure_max'] = 80
-REWARD_PARAMS['cost_max'] = 2
-STATE_PARAMS['pressure_min'] = 0
-STATE_PARAMS['pressure_max'] = 120
-STATE_PARAMS['demand_min'] = 0
-STATE_PARAMS['demand_max'] = 80
-
-# Environment configuration
-env_config = {
-    'inp_file': INP_FILE,
-    'list_control_elements': CONTROL_ELEMS,
-    'list_action_limits': CONTROL_LIMITS,
-    'time_step': CONTROL_TIME_STEP,
-    'reward_params': REWARD_PARAMS,
-    'state_params': STATE_PARAMS,
-    'random_ini_actions': INIT_RANDOM_ACTIONS_PER_EPISODE,
-}
-
 # Number of explorers
 NUM_PROC = 2
-
 # Epsilon
 EPSILON = 1.0
-
 
 class ExplorerBDQ:
     def __init__(self, hiddens_common, hiddens_actions, hiddens_value, state_shape, num_action_branches, action_per_branch):
@@ -91,7 +54,7 @@ class ExplorerBDQ:
     @weights.setter
     def weights(self, w):
         self.q.set_weights(w)
-
+        
 def info(title):
     print(title)
     print('module name:', __name__)
@@ -100,8 +63,14 @@ def info(title):
     print(multiprocessing.current_process()._identity)
     
 
-def explorer(global_rb, env_dict, is_training_done, queue, args, shm_name):
+def explorer(global_rb, is_training_done, queue, args, shm_name):
     info('Explorer')
+    env = env_creator(args)
+    env_dict = {"obs": {"shape": args.state_shape},
+                "act": {"shape": args.action_shape},
+                "rew": {},
+                "next_obs": {"shape": args.state_shape},
+                "done": {}}
     proc_id = multiprocessing.current_process()._identity[0] - 1
     local_buffer_size = 96
     local_rb = ReplayBuffer(local_buffer_size, env_dict)
@@ -120,8 +89,6 @@ def explorer(global_rb, env_dict, is_training_done, queue, args, shm_name):
         print('Explorer: Failed to create model')
         is_training_done.set()
         return
-    
-    env = env_creator(env_config, args.action_per_branch)
 
     obs = env.reset()
     ep_reward = 0.
@@ -155,12 +122,17 @@ def explorer(global_rb, env_dict, is_training_done, queue, args, shm_name):
 
 
 def learner(global_rb, queues, args, shm_name):
+    import tensorflow as tf
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = 'logs/' + args.task + '/' + current_time
+    summary_writer = tf.summary.create_file_writer(log_dir)
+    
     batch_size = args.batch_size
     n_warmup = args.learning_starts
     n_training_step = args.max_frames
     explorer_update_freq = 100
 
-    env = env_creator(env_config, args.action_per_branch)
+    env = env_creator(args)
 
     model = BranchingDQN(
         args.common_hidden_sizes,
@@ -203,29 +175,34 @@ def learner(global_rb, queues, args, shm_name):
         episode_rewards = np.ndarray(dummy_array.shape, dtype=dummy_array.dtype, buffer=existing_shm.buf) # Attach to the existing shared memory block
         p_bar.set_description('Rew: {:.3f}'.format(np.mean(episode_rewards)))
         
-        # mlflow log metrics
-        mlflow.log_metric("train reward", np.mean(episode_rewards))
-        mlflow.log_metric("epsilon", EPSILON)
-        # convert tensorflow tensor to numpy array
-        mlflow.log_metric("loss", loss.numpy())
-        mlflow.log_metric("absTD", np.mean(absTD.numpy()))
-
+        # log the metrics with tensorboard
+        with summary_writer.as_default():
+            tf.summary.scalar('train/loss', loss, frame)
+            tf.summary.scalar('train/td_error', np.mean(absTD), frame)
+            tf.summary.scalar('train/epsilon', EPSILON, frame)
+            tf.summary.scalar('train/reward', np.mean(episode_rewards), frame)
+            tf.summary.scalar('test/reward', test_reward, frame)
+        
         p_bar.update(1)
 
     p_bar.close()
 
+def env_creator(args):
+    env = gym.make(args.task)
+    env = DiscreteToContinuous(env, args.action_per_branch)
+    return env
 
 def get_args():
     parser = ArgumentParser()
-    parser.add_argument('--task', default=INP_FILE.split('/')[-1].split('.')[0])
+    parser.add_argument('--task', default='BipedalWalker-v3')
     # network architecture
     parser.add_argument('--common_hidden-sizes', type=int,
-                        nargs='*', default=[512, 256, 128])
+                        nargs='*', default=[512, 256])
     parser.add_argument('--action_hidden-sizes', type=int,
-                        nargs='*', default=[64])
+                        nargs='*', default=[128])
     parser.add_argument('--value_hidden-sizes', type=int,
-                        nargs='*', default=[64])
-    parser.add_argument('--action_per_branch', type=int, default=2)
+                        nargs='*', default=[128])
+    parser.add_argument('--action_per_branch', type=int, default=6)
     # training hyperparameters
     parser.add_argument('--epsilon_start', type=float, default=1.0)
     parser.add_argument('--epsilon_final', type=float, default=0.01)
@@ -233,7 +210,7 @@ def get_args():
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--target_net_update_freq', type=int, default=1000)
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--learning_starts', type=int, default=192)
     parser.add_argument('--max_frames', type=int, default=1000000)
     # replay buffer
@@ -243,13 +220,6 @@ def get_args():
     parser.add_argument('--tracking_uri', type=str, default='http://0.0.0.0:5000')
 
     return parser.parse_args()
-
-# Environment creator function
-def env_creator(env_config, action_per_branch):
-    tmp_file = '{}/{}'.format(REPORT_DIR,
-                              REPORT_NAME) if REPORT_NAME is not None else None
-    env = WaterDistributionEnvironment(tmp_file_prefix=tmp_file, **env_config)
-    return DiscreteToContinuous(env, action_per_branch)
 
 
 def main(args=get_args()):
@@ -263,7 +233,7 @@ def main(args=get_args()):
     dummy_array = np.zeros(NUM_PROC)
     shm = shared_memory.SharedMemory(create=True, size=dummy_array.nbytes)
     try:
-        env = env_creator(env_config, args.action_per_branch)
+        env = env_creator(args)
         args.state_shape = env.observation_space.shape
         args.action_shape = env.action_space.shape
         print("Observations shape:", args.state_shape)
@@ -282,7 +252,7 @@ def main(args=get_args()):
 
         qs = [SimpleQueue() for _ in range(n_explorer)]
         ps = [Process(target=explorer,
-                    args=[global_rb, env_dict, is_training_done, q, args, shm.name])
+                    args=[global_rb, is_training_done, q, args, shm.name])
             for q in qs]
 
         for p in ps:

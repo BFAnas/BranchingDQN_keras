@@ -46,8 +46,8 @@ class BranchingDQN(BaseAgent):
         self.q.set_weights(w)
 
     @staticmethod
-    def loss_function(x, y):
-        return tf.reduce_mean(tf.reduce_sum(tf.multiply(x-y, x-y), axis=-1))
+    def loss_function(td_error):
+        return tf.reduce_mean(tf.reduce_sum(tf.math.square(td_error), axis=-1))
 
     def get_action(self, x: np.ndarray, epsilon=0) -> np.ndarray:
         batch_size = 1 if len(x.shape) == 1 else x.shape[0]
@@ -55,7 +55,7 @@ class BranchingDQN(BaseAgent):
             action = np.random.randint(
                 0, self.action_per_branch, size=(batch_size, self.num_action_branches))
         else:
-            if batch_size == 1:
+            if len(x.shape) == 1:
                 x = np.expand_dims(x, axis=0)
             out = self.q(x, training=False)
             action = tf.math.argmax(out, axis=2)[0].numpy()
@@ -63,7 +63,7 @@ class BranchingDQN(BaseAgent):
             action[np.random.randint(batch_size), np.random.randint(self.num_action_branches)] = np.random.randint(self.action_per_branch)
         return action.squeeze()
 
-    # @tf.function
+    @tf.function
     def train_step(self, states, action_mask, target_qvals):
         with tf.GradientTape() as tape:
             # Train the model on the states and updated Q-values
@@ -73,12 +73,16 @@ class BranchingDQN(BaseAgent):
             q_action = tf.multiply(q_values, action_mask)
 
             # Calculate loss between target Q-value and old Q-value
-            loss = self.loss_function(target_qvals, q_action)
+            td_error = tf.math.abs(target_qvals - q_action)
+            loss = self.loss_function(td_error)
+            
+        dims = tf.range(1, tf.rank(td_error))
+        td_error = tf.reduce_mean(td_error, axis=dims)
 
         # Backpropagation
         grads = tape.gradient(loss, self.q.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.q.trainable_variables))
-        return loss
+        return loss, td_error
 
     def update_policy(self, sample, gamma=0.99):
         b_states, b_actions, b_rewards, b_next_states, b_dones = sample[
@@ -107,7 +111,7 @@ class BranchingDQN(BaseAgent):
         action_mask = tf.one_hot(actions, self.action_per_branch)
         target_qvals = tf.multiply(target_qvals, action_mask)
 
-        loss = self.train_step(states, action_mask, target_qvals)
+        loss, td_error = self.train_step(states, action_mask, target_qvals)
 
         self.update_counter += 1
         if self.update_counter % self.target_net_update_freq == 0:
@@ -115,5 +119,5 @@ class BranchingDQN(BaseAgent):
             weights = self.q.get_weights()
             self.target.set_weights(weights)
 
-        return loss, None
+        return loss, td_error
     
